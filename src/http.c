@@ -9,6 +9,35 @@ enum {
 };
 
 int
+check_auth_cookie(struct lws *wsi) {
+    /* If Authz Header not found check value in TTYD-AUTH cookie*/
+    char c_buffer[4096];
+    if ( lws_hdr_total_length( wsi, WSI_TOKEN_HTTP_COOKIE ) <= 0) {
+	  lwsl_notice("No cookie found \n");
+    } else if( lws_hdr_copy( wsi, c_buffer, sizeof(c_buffer), WSI_TOKEN_HTTP_COOKIE ) != -1 ){
+       char *cookies, *cookie, *savecookies;
+       char *cookie_name, *cookie_value, *savecookie;
+       cookies = c_buffer;
+       while ( (cookie=strtok_r( cookies, ";", &savecookies)) != NULL ) {
+          cookies=NULL;
+          cookie_name=strtok_r( cookie, "=", &savecookie);
+          if (cookie_name) {
+	      if (!strcmp(cookie_name, "TTYD-AUTH")) {
+                 cookie_value = savecookie;
+	         if (cookie_value != NULL && !strcmp(cookie_value, server->credential)){
+                lwsl_notice("TTYD-AUTH Cookie found & authenticated %s : %s  \n", cookie_name, cookie_value);
+                return AUTH_OK;
+		 } else {
+                    return AUTH_FAIL;
+                }
+              }
+           }
+        }
+     }
+    return AUTH_ERROR;
+}
+
+int
 check_auth(struct lws *wsi, struct pss_http *pss) {
     if (server->credential == NULL)
         return AUTH_OK;
@@ -31,6 +60,10 @@ check_auth(struct lws *wsi, struct pss_http *pss) {
         }
         if (b64_text != NULL && !strcmp(b64_text, server->credential))
             return AUTH_OK;
+    }
+
+    if (check_auth_cookie(wsi) == AUTH_OK){
+        return AUTH_OK;
     }
 
     unsigned char buffer[1024 + LWS_PRE], *p, *end;
